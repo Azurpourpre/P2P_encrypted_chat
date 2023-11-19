@@ -6,6 +6,13 @@
 #include "../lib/cryptopp/dsa.h"
 #include "../lib/cryptopp/osrng.h"
 #include "../lib/cryptopp/base64.h"
+#include "../lib/cryptopp/files.h"
+#include "../lib/cryptopp/rijndael.h"
+#include "../lib/cryptopp/gcm.h"
+
+#define DSA_KEY_LENGTH 2048
+#define AES_KEY_LENGTH 32
+#define TAG_SIZE 12
 
 using namespace CryptoPP;
 
@@ -17,6 +24,24 @@ class Vault{
     private:
         std::set<DSA::PublicKey*> data;
         void append(std::string key);
+};
+
+class Cryptor{
+    public:
+        Cryptor();
+        std::string get_pubkey();
+        Vault& get_vault();
+
+        SecByteBlock& gen_AES_Key();
+        void import_AES_Key(byte* new_key);
+    
+    private:
+        DSA::PrivateKey DSA_privkey;
+        DSA::PublicKey DSA_pubkey;
+
+        SecByteBlock AES_key;
+
+        Vault vault;
 };
 
 Vault::Vault(){
@@ -41,12 +66,11 @@ void Vault::store(std::string key){
     encoder.MessageEnd();
 
     std::ofstream outfile;
-    outfile.open(".vault");
+    outfile.open(".vault", std::ofstream::app);
     outfile << encoded << std::endl;
     outfile.close();
 
     this->append(key);
-
 }
 
 const std::set<DSA::PublicKey*> Vault::get(){
@@ -57,6 +81,66 @@ void Vault::append(std::string key){
     DSA::PublicKey* new_pubkey = new DSA::PublicKey();
     new_pubkey->Load(StringStore(key).Ref());
     data.insert(new_pubkey);
+}
+
+
+
+Cryptor::Cryptor(){
+    Vault vault = Vault();
+
+    std::ifstream pubkey_file, privkey_file;
+    pubkey_file.open(".keys/pubkey");
+    privkey_file.open(".keys/privkey");
+
+    if(pubkey_file.is_open() && privkey_file.is_open()){
+        this->DSA_pubkey.Load(FileSource(pubkey_file, true).Ref());
+        this->DSA_privkey.Load(FileSource(privkey_file, true).Ref());
+    }
+    else {
+        pubkey_file.close();
+        privkey_file.close();
+        AutoSeededRandomPool rng;
+        //Recreate the DSA Keys
+
+
+        this->DSA_privkey.GenerateRandomWithKeySize(rng, DSA_KEY_LENGTH);
+        this->DSA_pubkey.AssignFrom(DSA_privkey);
+
+
+        if(!DSA_privkey.Validate(rng,3) || !DSA_pubkey.Validate(rng, 3))
+            throw std::runtime_error("DSA Key generation failed");
+
+
+        std::ofstream pubkey_file, privkey_file;
+
+        pubkey_file.open(".keys/pubkey");
+        DSA_pubkey.Save(FileSink(pubkey_file).Ref());
+        pubkey_file.close();
+
+        privkey_file.open(".keys/privkey");
+        DSA_privkey.Save(FileSink(privkey_file).Ref());
+        privkey_file.close();
+    }
+}
+
+std::string Cryptor::get_pubkey(){
+    std::string retval;
+    DSA_pubkey.Save(StringSink(retval).Ref());
+    return retval;
+}
+
+Vault& Cryptor::get_vault(){ return this->vault; }
+
+SecByteBlock& Cryptor::gen_AES_Key(){
+    AutoSeededRandomPool rng;
+    AES_key = SecByteBlock(AES_KEY_LENGTH);
+    rng.GenerateBlock(AES_key, AES_KEY_LENGTH);
+
+    return this->AES_key;
+}
+
+void Cryptor::import_AES_Key(byte* new_key){
+    this->AES_key = SecByteBlock(new_key, AES_KEY_LENGTH);
 }
 
 #endif

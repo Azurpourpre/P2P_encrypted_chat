@@ -2,3 +2,4 @@ Makefile
 SecChat
 .keys/*
 lib/cryptopp/*
+.vault
