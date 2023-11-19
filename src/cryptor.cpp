@@ -12,7 +12,6 @@
 #include "../lib/cryptopp/gcm.h"
 #include "../lib/cryptopp/filters.h"
 
-#define DSA_KEY_LENGTH 2048
 #define AES_KEY_LENGTH 32
 #define TAG_SIZE 12
 
@@ -97,21 +96,19 @@ Cryptor::Cryptor(){
     Vault vault = Vault();
 
     std::ifstream pubkey_file, privkey_file;
-    pubkey_file.open(".keys/pubkey");
     privkey_file.open(".keys/privkey");
 
-    if(pubkey_file.is_open() && privkey_file.is_open()){
-        this->DSA_pubkey.Load(FileSource(pubkey_file, true).Ref());
+    if(privkey_file.is_open()){
         this->DSA_privkey.Load(FileSource(privkey_file, true).Ref());
+        this->DSA_pubkey.AssignFrom(DSA_privkey);
     }
     else {
-        pubkey_file.close();
         privkey_file.close();
         AutoSeededRandomPool rng;
         //Recreate the DSA Keys
 
 
-        this->DSA_privkey.GenerateRandomWithKeySize(rng, DSA_KEY_LENGTH);
+        this->DSA_privkey.GenerateRandomWithKeySize(rng, 1024);
         this->DSA_pubkey.AssignFrom(DSA_privkey);
 
 
@@ -119,11 +116,7 @@ Cryptor::Cryptor(){
             throw std::runtime_error("DSA Key generation failed");
 
 
-        std::ofstream pubkey_file, privkey_file;
-
-        pubkey_file.open(".keys/pubkey");
-        DSA_pubkey.Save(FileSink(pubkey_file).Ref());
-        pubkey_file.close();
+        std::ofstream privkey_file;
 
         privkey_file.open(".keys/privkey");
         DSA_privkey.Save(FileSink(privkey_file).Ref());
