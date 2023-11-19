@@ -3,7 +3,7 @@
 
 #include <iostream>
 
-enum error_code {NO_ERROR = 0, SOCKET_INIT_ERROR = 18, SOCKET_RUNTIME_ERROR = 19};
+enum error_code {NO_ERROR = 0, SOCKET_INIT_ERROR = 18, SOCKET_RUNTIME_ERROR = 19, ENCRYPTION_ERROR = 1};
 
 void err_exit(error_code err){
     switch(err){

@@ -1,14 +1,16 @@
 #ifndef _CRYPTOR
 #define _CRYPTOR
 
-#include <set>
+#include <unordered_set>
 #include <fstream>
+#include "error.cpp"
 #include "../lib/cryptopp/dsa.h"
 #include "../lib/cryptopp/osrng.h"
 #include "../lib/cryptopp/base64.h"
 #include "../lib/cryptopp/files.h"
 #include "../lib/cryptopp/rijndael.h"
 #include "../lib/cryptopp/gcm.h"
+#include "../lib/cryptopp/filters.h"
 
 #define DSA_KEY_LENGTH 2048
 #define AES_KEY_LENGTH 32
@@ -20,9 +22,9 @@ class Vault{
     public:
         Vault();
         void store(std::string key);
-        const std::set<DSA::PublicKey*> get();
+        const std::unordered_set<DSA::PublicKey*> get();
     private:
-        std::set<DSA::PublicKey*> data;
+        std::unordered_set<DSA::PublicKey*> data;
         void append(std::string key);
 };
 
@@ -32,8 +34,14 @@ class Cryptor{
         std::string get_pubkey();
         Vault& get_vault();
 
+        std::string DSA_sign(std::string message);
+        std::string DSA_verify(std::string message);
+
         SecByteBlock& gen_AES_Key();
         void import_AES_Key(byte* new_key);
+        std::string AES_encrypt(byte* iv, std::string message);
+        std::string AES_decrypt(byte* iv, std::string ciphered);
+        
     
     private:
         DSA::PrivateKey DSA_privkey;
@@ -73,7 +81,7 @@ void Vault::store(std::string key){
     this->append(key);
 }
 
-const std::set<DSA::PublicKey*> Vault::get(){
+const std::unordered_set<DSA::PublicKey*> Vault::get(){
     return this->data;
 }
 
@@ -131,6 +139,39 @@ std::string Cryptor::get_pubkey(){
 
 Vault& Cryptor::get_vault(){ return this->vault; }
 
+std::string Cryptor::DSA_sign(std::string message){
+    AutoSeededRandomPool rng;
+    std::string signature;
+    DSA::Signer signer(DSA_privkey);
+
+    StringSource ss(message, true,
+        new SignerFilter(rng, signer, 
+            new StringSink(signature)));
+
+    return message+signature;
+}
+
+std::string Cryptor::DSA_verify(std::string message){
+    bool result = false;
+    for(PublicKey* candidate: this->vault.get()){
+        DSA::Verifier verifier(*candidate);
+
+        
+        StringSource ss(message, true,
+            new SignatureVerificationFilter(
+                verifier,
+                new ArraySink((byte*) &result, sizeof(result)), 
+                8 | 0 /* PUT RESULT | SIGNATURE_AT_THE_END */
+        ));
+
+        if(result)
+            return message.substr(0, message.length() - 56);
+    }
+    
+    std::cerr << "Invalid Signature" << std::endl;
+    return "";
+}
+
 SecByteBlock& Cryptor::gen_AES_Key(){
     AutoSeededRandomPool rng;
     AES_key = SecByteBlock(AES_KEY_LENGTH);
@@ -141,6 +182,51 @@ SecByteBlock& Cryptor::gen_AES_Key(){
 
 void Cryptor::import_AES_Key(byte* new_key){
     this->AES_key = SecByteBlock(new_key, AES_KEY_LENGTH);
+}
+
+std::string Cryptor::AES_encrypt(byte* iv, std::string message){
+    AutoSeededRandomPool rng;
+    std::string cipher;
+    rng.GenerateBlock(iv, AES::BLOCKSIZE);
+
+    try{
+        GCM<AES>::Encryption e;
+        e.SetKeyWithIV(AES_key, AES_key.size(), iv, AES::BLOCKSIZE);
+
+        StringSource ss(message, true,
+            new AuthenticatedEncryptionFilter(e, 
+                new StringSink(cipher), false, TAG_SIZE));
+    }
+    catch(Exception& e){
+        std::cerr << e.what() << std::endl;
+        err_exit(ENCRYPTION_ERROR);
+    }
+
+    return cipher;
+};
+
+std::string Cryptor::AES_decrypt(byte* iv, std::string ciphered){
+    std::string clear;
+    try{
+        GCM<AES>::Decryption d;
+        d.SetKeyWithIV(AES_key, AES_key.size(), iv, AES::BLOCKSIZE);
+
+        AuthenticatedDecryptionFilter df(d,
+            new StringSink(clear),
+            16 | 0 /*DEFAULT FLAGS*/, TAG_SIZE);
+        
+        StringSource ss2(ciphered, true,
+            new Redirector(df));
+        
+        if(df.GetLastResult() == false)
+            throw new std::runtime_error("Error on intgrity when decrypting");
+    }
+    catch(Exception& e){
+        std::cerr << e.what() << std::endl;
+        err_exit(ENCRYPTION_ERROR);
+    }
+
+    return clear;
 }
 
 #endif
