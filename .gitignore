@@ -1,4 +1,3 @@
-Makefile
 SecChat
 .keys/*
 lib/cryptopp/*
