@@ -3,6 +3,7 @@
 
 #include <unordered_set>
 #include <fstream>
+#include <iostream>
 #include "error.cpp"
 #include "../lib/cryptopp/dsa.h"
 #include "../lib/cryptopp/osrng.h"
@@ -20,6 +21,7 @@ using namespace CryptoPP;
 class Vault{
     public:
         Vault();
+        ~Vault();
         void store(std::string key);
         const std::unordered_set<DSA::PublicKey*> get();
     private:
@@ -63,6 +65,12 @@ Vault::Vault(){
 
         this->append(decoded);
         decoded = "";
+    }
+}
+
+Vault::~Vault(){
+    for(const auto& key : this->data){
+        delete key;
     }
 }
 
@@ -158,7 +166,7 @@ std::string Cryptor::DSA_verify(std::string message){
         ));
 
         if(result)
-            return message.substr(0, message.length() - 56);
+            return message.substr(0, message.length() - 40);
     }
     
     std::cerr << "Invalid Signature" << std::endl;
@@ -196,7 +204,7 @@ std::string Cryptor::AES_encrypt(byte* iv, std::string message){
     }
 
     return cipher;
-};
+}
 
 std::string Cryptor::AES_decrypt(byte* iv, std::string ciphered){
     std::string clear;

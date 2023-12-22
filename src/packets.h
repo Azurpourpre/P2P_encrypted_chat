@@ -1,5 +1,7 @@
+#ifndef _PACKETS
+#define _PACKETS
+
 #include <cstdint>
-#include "cryptor.cpp"
 
 /*
     Packet ID :
@@ -35,7 +37,8 @@ namespace Packets{
 
     typedef struct{
         const packet_id id = RESPONSE;
-        CryptoPP::byte hash[256];
+        char random[128];
+        char hash[56];
     } Response;
 
     typedef struct{
@@ -43,4 +46,10 @@ namespace Packets{
         char pubkey[440];
         char message[1024];
     } Add_key_request;
+
+    union Generic_packet {Hello h; Message m; Challenge c; Response r; Add_key_request akr;};
 };
+
+#define MAX_PACKET_SIZE sizeof(Packets::Generic_packet)
+
+#endif

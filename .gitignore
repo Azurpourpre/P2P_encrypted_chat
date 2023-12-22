@@ -2,3 +2,4 @@ SecChat
 .keys/*
 lib/cryptopp/*
 .vault
+.vscode

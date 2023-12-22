@@ -1,25 +1,22 @@
 #include <iostream>
-#include "src/multicast.h"
-#include "src/packets.h"
+#include "src/reciever.cpp"
+#include "src/emitter.cpp"
+
+
 
 int main(){
 	Cryptor* crypt = new Cryptor();
 
+	Emitter em(crypt, "127.0.0.1", 12345);
+	Reciever rc(crypt, "239.1.1.1", 9876);
 
-	std::cout << "Public key size : " << crypt->get_pubkey().size() << std::endl;
-	// SecByteBlock key = crypt->gen_AES_Key();
-	// byte iv[AES::BLOCKSIZE];
+	pthread_t em_id, rc_id;
+	pthread_create(&em_id, NULL, &(Emitter::run), &em);
+	pthread_create(&rc_id, NULL, &(Reciever::run), &rc);
 
-	// std::string signed_msg = crypt->DSA_sign("Hello World !");
-	// std::string ciphered = crypt->AES_encrypt(iv, signed_msg);
+	pthread_join(em_id, NULL);
+	pthread_cancel(rc_id);
 
-	// std::string clear = crypt->DSA_verify(crypt->AES_decrypt(iv,ciphered));
-	// if (clear == ""){
-	// 	crypt->get_vault().store(crypt->get_pubkey());
-	// 	clear = crypt->DSA_verify(signed_msg);
-	// }
-
-	// std::cout << "Clear : " << clear << std::endl;
-
+	delete crypt;
 	return 0;
 } 
