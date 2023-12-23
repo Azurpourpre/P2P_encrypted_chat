@@ -5,17 +5,18 @@
 
 /*
     Packet ID :
-    0b0 -> Hello
+    0b0 -> Don't assign
     0b1 -> Message
-    0b1x -> Authentication with known public key
-        0b10 -> Challenge
-        0b11 -> Response
-    0b1xx -> Key Request
-        0b100 -> Add public key Request
+    0b1? -> Authentication with known public key
+        0x10 -> Challenge
+        0x11 -> Response
+    0b1?? -> Control Messages
+        0b100 -> Hello
+        0b101 -> Add public key Request
 */
 
 namespace Packets{
-    enum packet_id : uint8_t {HELLO = 0b0, MESSAGE = 0b1, CHALLENGE = 0b10, RESPONSE = 0b11, ADD_KEY_REQUEST = 0b100};
+    enum packet_id : uint8_t {HELLO = 0b100, MESSAGE = 0b1, CHALLENGE = 0b10, RESPONSE = 0b11, ADD_KEY_REQUEST = 0b101};
     enum auth_type : uint8_t {CHALLENGE_RESPONSE = 0};
 
     typedef struct{

@@ -5,7 +5,7 @@
 
 class Emitter{
     public:
-        Emitter(Cryptor* cryptor, const char* ip, const int port);
+        Emitter(Cryptor* cryptor, msocket_send* socket);
         ~Emitter();
         static void* run(void* pself);
 
@@ -18,8 +18,8 @@ class Emitter{
         bool exit;
 };
 
-Emitter::Emitter(Cryptor* cryptor, const char* ip, const int port){
-    this->socket = new msocket_send(ip, port);
+Emitter::Emitter(Cryptor* cryptor, msocket_send* socket){
+    this->socket = socket;
     this->cryptor = cryptor;
     this->exit = false;
     this->username = "Anon";
@@ -37,9 +37,12 @@ void* Emitter::run(void* pself){
     do{
         std::cout << "{iter : " << iter++ << "}" << std::endl;
         std::cout << "> ";
-        std::cin >> input;
+        std::getline(std::cin, input);
 
-        if(input[0] == '/'){
+        if(input[0] == '\n' || input[0] == '\x00'){
+            /* SKIP */
+        }
+        else if(input[0] == '/'){
             self->parseCommand(input.substr(1));
         }
         else{
@@ -59,8 +62,7 @@ void Emitter::parseCommand(const std::string input){
     }
     else if(input.compare("rename") == 0){
         std::cout << "Enter your new username : ";
-        std::cin >> this->username;
-        std::cout << std::hex << this->username << std::endl;
+        std::getline(std::cin, this->username);
     }
 }
 

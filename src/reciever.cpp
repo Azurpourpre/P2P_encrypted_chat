@@ -9,7 +9,7 @@
 
 class Reciever{
     public:
-        Reciever(Cryptor* cryptor, const char* ip, const int port);
+        Reciever(Cryptor* cryptor, msocket_recv* socket);
         ~Reciever();
         static void* run(void* self);
 
@@ -23,8 +23,8 @@ class Reciever{
 };
 
 
-Reciever::Reciever(Cryptor* cryptor, const char* ip, const int port){
-    this->socket = new msocket_recv(ip, port);
+Reciever::Reciever(Cryptor* cryptor, msocket_recv* socket){
+    this->socket = socket;
     this->cryptor = cryptor;
 }
 

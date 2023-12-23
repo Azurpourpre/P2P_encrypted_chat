@@ -1,0 +1,19 @@
+version: "3.8"
+networks:
+  lan:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.42.0.0/24
+services:
+  cli1:
+    build: .
+    networks:
+      lan:
+        ipv4_address: 172.42.0.2
+  
+  cli2:
+    build: .
+    networks:
+      lan:
+        ipv4_address: 172.42.0.3

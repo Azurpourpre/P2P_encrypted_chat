@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <cstring>
 #include "error.cpp"
 
@@ -25,6 +26,11 @@ class msocket_send{
         struct sockaddr_in addr;
         char* ip_group;
         int port;
+};
+
+struct msocket{
+    msocket_recv* recv;
+    msocket_send* send;
 };
 
 
@@ -61,9 +67,29 @@ msocket_recv::msocket_recv(const char* ip_group, const int port){
 
 
 void msocket_recv::recv(char* buffer, int bufsz){
-    unsigned int addr_len = sizeof(this->addr);
-    int nbytes = recvfrom(this->fd_sock, buffer, bufsz, 0, (struct sockaddr*)&addr, &addr_len);
+    struct sockaddr_in recv_addr;
+    unsigned int addr_len = sizeof(recv_addr);
+    int nbytes = recvfrom(this->fd_sock, buffer, bufsz, 0, (struct sockaddr*)&recv_addr, &addr_len);
     if(nbytes < 0) err_exit(SOCKET_RUNTIME_ERROR);
+
+    /* Check if address is mine */
+    struct ifaddrs* myif = new ifaddrs, *tmp;
+    getifaddrs(&myif);
+    tmp = myif;
+
+    while(tmp){
+        if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET){
+            const struct sockaddr_in* tmp_skr = (const sockaddr_in*)tmp->ifa_addr;
+            if(tmp_skr->sin_addr.s_addr == recv_addr.sin_addr.s_addr){
+                const char null = 0;
+                memcpy(buffer, &null, bufsz);
+            }
+        }
+        tmp = tmp->ifa_next;
+    }
+
+    delete myif;
+
 }
 
 msocket_send::msocket_send(const char* ip_group, const int port){
