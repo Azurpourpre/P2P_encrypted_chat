@@ -2,6 +2,8 @@
 #define _EMITTER
 
 #include "packets.h"
+#include "cryptor.cpp"
+#include "multicast.cpp"
 
 class Emitter{
     public:
@@ -71,7 +73,7 @@ void Emitter::doMessage(const std::string message){
     strncpy(sendval.username, this->username.c_str(), 15);
     strncpy(sendval.message, message.c_str(), 1024);
 
-    this->socket->send((char*)&sendval, sizeof(Packets::Message));
+    this->socket->send(&sendval, sizeof(Packets::Message));
 }
 
 #endif

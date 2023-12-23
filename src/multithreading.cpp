@@ -1,10 +1,13 @@
 #ifndef _MULTITHREADING
 #define _MULTITHREADING
 
+#include <cstdlib>
 #include <mutex>
+#include "error.cpp"
 
 class Shared_buffer{
     public:
+        Shared_buffer();
         Shared_buffer(size_t default_size);
         ~Shared_buffer();
 
@@ -20,8 +23,12 @@ class Shared_buffer{
         std::mutex mutex;
 };
 
-Shared_buffer::Shared_buffer(size_t default_size = 4){
+Shared_buffer::Shared_buffer(size_t default_size){
     this->buffer = malloc(default_size);
+}
+
+Shared_buffer::Shared_buffer(){
+    this->buffer = malloc(4);
 }
 
 Shared_buffer::~Shared_buffer(){
@@ -45,7 +52,7 @@ void Shared_buffer::write(T data){
 template<typename T>
 T Shared_buffer::read(){
     this->mutex.lock();
-    T retval = *buffer;
+    T retval = *(T&)buffer;
     this->mutex.unlock();
 }
 

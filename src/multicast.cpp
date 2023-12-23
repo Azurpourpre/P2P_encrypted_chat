@@ -20,7 +20,7 @@ class msocket_recv{
 class msocket_send{
     public:
         msocket_send(const char* ip_group, const int port);
-        void send(char* buffer, int bufsz);
+        void send(void* buffer, int bufsz);
     private:
         int fd_sock;
         struct sockaddr_in addr;
@@ -106,7 +106,7 @@ msocket_send::msocket_send(const char* ip_group, const int port){
     addr.sin_port = 0;
 }
 
-void msocket_send::send(char* buffer, int bufsz){
+void msocket_send::send(void* buffer, int bufsz){
     struct sockaddr_in dest;
     dest.sin_family = AF_INET;
     dest.sin_port = htons(this->port);

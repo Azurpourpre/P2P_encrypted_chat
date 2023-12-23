@@ -19,30 +19,30 @@ namespace Packets{
     enum packet_id : uint8_t {HELLO = 0b100, MESSAGE = 0b1, CHALLENGE = 0b10, RESPONSE = 0b11, ADD_KEY_REQUEST = 0b101};
     enum auth_type : uint8_t {CHALLENGE_RESPONSE = 0};
 
-    typedef struct{
+    typedef struct Hello{
         const packet_id id = HELLO;
         auth_type auth;
     } Hello;
 
-    typedef struct{
+    typedef struct Message{
         const packet_id id = MESSAGE;
         char username[15];
         char message[1024];
     } Message;
 
-    typedef struct{
+    typedef struct Challenge{
         const packet_id id = CHALLENGE;
         char random[128];
         int n_zero;
     } Challenge;
 
-    typedef struct{
+    typedef struct Response{
         const packet_id id = RESPONSE;
         char random[128];
         char hash[56];
     } Response;
 
-    typedef struct{
+    typedef struct Add_key_request{
         const packet_id id = ADD_KEY_REQUEST;
         char pubkey[440];
         char message[1024];
