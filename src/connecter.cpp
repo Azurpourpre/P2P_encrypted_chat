@@ -10,10 +10,7 @@ class Connecter{
         Connecter(Cryptor* cryptor, const char* ip_group, const int port);
         
         struct msocket get_socket();
-
-        enum State {WAITING_CHALLENGE, WAITING_KEY};
     private:
-        State state;
         Cryptor* cryptor;
         msocket_recv* s_recv;
         msocket_send* s_send;

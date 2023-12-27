@@ -1,233 +1,281 @@
 #ifndef _CRYPTOR
 #define _CRYPTOR
 
+#include <cstring>
+#include <exception>
+#include <ios>
+#include <optional>
+#include <sys/types.h>
 #include <unordered_set>
 #include <fstream>
 #include <iostream>
-#include "error.cpp"
-#include "../lib/cryptopp/dsa.h"
-#include "../lib/cryptopp/osrng.h"
-#include "../lib/cryptopp/base64.h"
-#include "../lib/cryptopp/files.h"
-#include "../lib/cryptopp/rijndael.h"
-#include "../lib/cryptopp/gcm.h"
-#include "../lib/cryptopp/filters.h"
+#include <cstdint>
+#include <cmath>
+#include <vector>
 
-#define AES_KEY_LENGTH 32
-#define TAG_SIZE 12
+#include "../lib/cryptopp/rsa.h"
+#include "../lib/cryptopp/rijndael.h"
+#include "../lib/cryptopp/osrng.h"
+#include "../lib/cryptopp/filters.h"
+#include "../lib/cryptopp/files.h"
+#include "../lib/cryptopp/modes.h"
+
+#include "error.cpp"
+
+#define AES_KEY_SIZE 256/8
+#define RSA_KEY_SIZE 4096/8
+#define IV_VAL {38, 49, 234, 213, 173, 165, 254, 207, 18, 2, 96, 157, 117, 197, 215, 28}
 
 using namespace CryptoPP;
+
+typedef uint8_t RSA_Exp[RSA_KEY_SIZE];
 
 class Vault{
     public:
         Vault();
         ~Vault();
-        void store(std::string key);
-        const std::unordered_set<DSA::PublicKey*> get();
-    private:
-        std::unordered_set<DSA::PublicKey*> data;
-        void append(std::string key);
-};
-
-class Cryptor{
-    public:
-        Cryptor();
-        std::string get_pubkey();
-        Vault& get_vault();
-
-        std::string DSA_sign(std::string message);
-        std::string DSA_verify(std::string message);
-
-        SecByteBlock& gen_AES_Key();
-        void import_AES_Key(byte* new_key);
-        std::string AES_encrypt(byte* iv, std::string message);
-        std::string AES_decrypt(byte* iv, std::string ciphered);
         
-    
+        void store(RSA::PublicKey key);
+        bool in(RSA::PublicKey key);
+        std::unique_ptr<std::vector<Integer>> get();
     private:
-        DSA::PrivateKey DSA_privkey;
-        DSA::PublicKey DSA_pubkey;
-
-        SecByteBlock AES_key;
-
-        Vault vault;
+        std::unordered_set<uint8_t*> data;
 };
 
 Vault::Vault(){
-    std::ifstream infile;
-    infile.open(".vault");
+    std::streampos size;
+    char* vaultMem;
 
-    std::string decoded;
-    Base64Decoder decoder(new StringSink(decoded));
-    for(std::string line; getline(infile, line) ; ){
-        decoder.Put((unsigned char*)line.data(), line.size());
-        decoder.MessageEnd();
+    // Getting vault file in memory
+    std::ifstream vaultFile(".keys/vault", std::ios::in | std::ios::binary | std::ios::ate);
+    if(vaultFile.is_open()){
 
-        this->append(decoded);
-        decoded = "";
+        size = vaultFile.tellg();
+        vaultMem = new char[size];
+        vaultFile.seekg(0, std::ios::beg);
+        vaultFile.read((char*)vaultMem, size);
+        vaultFile.close();
+
+        // Parsing vault memory
+        const unsigned int n_keys = *(unsigned int*)vaultMem;
+
+        if((long unsigned int)size != sizeof(unsigned int) + (n_keys * RSA_KEY_SIZE)){
+            err_exit(Errors::ENCRYPTION_RUNTIME_ERROR);
+        }
+
+        if(n_keys > 0){
+            uint8_t* keys_arr = new uint8_t[n_keys * RSA_KEY_SIZE];
+            memcpy(keys_arr, vaultMem + sizeof(unsigned int), n_keys * RSA_KEY_SIZE);
+            for(unsigned int i = 0; i < n_keys; i++){
+                this->data.insert(keys_arr + (i*RSA_KEY_SIZE));
+            }
+        }
+
+        delete[] vaultMem;
     }
 }
 
 Vault::~Vault(){
-    for(const auto& key : this->data){
-        delete key;
+    std::ofstream vaultFile(".keys/vault", std::ios::out | std::ios::binary);
+
+    const unsigned int n_keys = this->data.size();
+    vaultFile.write((char*)&n_keys, sizeof(unsigned int));
+
+    for(auto i = this->data.begin(); i != this->data.end(); ++i){
+        vaultFile.write((char*)*i, RSA_KEY_SIZE);
+        delete[] *i;
     }
+
+    vaultFile.close();
 }
 
-void Vault::store(std::string key){
-    std::string encoded;
-    Base64Encoder encoder(new StringSink(encoded), false);
-    encoder.Put((unsigned char*)key.data(), key.size());
-    encoder.MessageEnd();
-
-    std::ofstream outfile;
-    outfile.open(".vault", std::ofstream::app);
-    outfile << encoded << std::endl;
-    outfile.close();
-
-    this->append(key);
+void Vault::store(RSA::PublicKey key){
+    uint8_t* new_key = new RSA_Exp;
+    key.GetModulus().Encode(new_key, RSA_KEY_SIZE, Integer::UNSIGNED);
+    this->data.insert(new_key);
 }
 
-const std::unordered_set<DSA::PublicKey*> Vault::get(){
-    return this->data;
-}
-
-void Vault::append(std::string key){
-    DSA::PublicKey* new_pubkey = new DSA::PublicKey();
-    new_pubkey->Load(StringStore(key).Ref());
-    data.insert(new_pubkey);
-}
-
-
-
-Cryptor::Cryptor(){
-    Vault vault = Vault();
-
-    std::ifstream pubkey_file, privkey_file;
-    privkey_file.open(".keys/privkey");
-
-    if(privkey_file.is_open()){
-        this->DSA_privkey.Load(FileSource(privkey_file, true).Ref());
-        this->DSA_pubkey.AssignFrom(DSA_privkey);
+bool Vault::in(RSA::PublicKey key){
+    for(auto i = this->data.begin(); i != this->data.end(); ++i){
+        Integer cmp_exp = Integer(*i, RSA_KEY_SIZE, Integer::UNSIGNED);
+        if(cmp_exp == key.GetModulus()){
+            return true;
+        }
     }
-    else {
-        privkey_file.close();
-        AutoSeededRandomPool rng;
-        //Recreate the DSA Keys
+        
 
-
-        this->DSA_privkey.GenerateRandomWithKeySize(rng, 1024);
-        this->DSA_pubkey.AssignFrom(DSA_privkey);
-
-
-        if(!DSA_privkey.Validate(rng,3) || !DSA_pubkey.Validate(rng, 3))
-            throw std::runtime_error("DSA Key generation failed");
-
-
-        std::ofstream privkey_file;
-
-        privkey_file.open(".keys/privkey");
-        DSA_privkey.Save(FileSink(privkey_file).Ref());
-        privkey_file.close();
-    }
+    return false;
 }
 
-std::string Cryptor::get_pubkey(){
-    std::string retval;
-    DSA_pubkey.Save(StringSink(retval).Ref());
+std::unique_ptr<std::vector<Integer>> Vault::get(){
+    std::unique_ptr<std::vector<Integer>> retval(new std::vector<Integer>);
+    
+    for(auto i = this->data.begin() ; i != this->data.end() ; ++i){
+        retval->push_back(
+            Integer(*i, RSA_KEY_SIZE, Integer::UNSIGNED)
+        );
+    }
+
     return retval;
 }
 
-Vault& Cryptor::get_vault(){ return this->vault; }
 
-std::string Cryptor::DSA_sign(std::string message){
+class Cryptor{
+    public:
+        Cryptor();
+
+        void set_symkey(uint8_t* key);
+        void print_keys();
+
+        std::string encrypt(std::string clear);
+        std::optional<std::string> decrypt(std::string cipher);
+    private:
+        Vault vault;
+        RSA::PublicKey pubKey;
+        RSA::PrivateKey privKey;
+        SecByteBlock symKey;
+
+        std::string RSA_Sign(std::string message);
+        std::optional<std::string> RSA_Verify(std::string signed_message);
+
+        std::string AES_encrypt(std::string message);
+        std::string AES_decrypt(std::string ciphered);
+};
+
+Cryptor::Cryptor(){
+    try{
+        ByteQueue pub_queue;
+        FileSource pub_file(".keys/pub", true);
+        pub_file.TransferTo(pub_queue);
+        pub_queue.MessageEnd();
+        this->pubKey.Load(pub_queue);
+
+        ByteQueue priv_queue;
+        FileSource priv_file(".keys/priv", true);
+        priv_file.TransferTo(priv_queue);
+        priv_queue.MessageEnd();
+        this->privKey.Load(priv_queue);
+    }
+    catch(Exception& e){
+        std::cerr << "Creating Keys !" << std::endl;
+        // Generate key pair
+        AutoSeededRandomPool rng;
+        InvertibleRSAFunction params;
+        params.GenerateRandomWithKeySize(rng, 8*RSA_KEY_SIZE);
+        this->privKey = RSA::PrivateKey(params);
+        this->pubKey = RSA::PublicKey(params);
+
+        //Saving to file
+        FileSink priv_file(".keys/priv");
+        FileSink pub_file(".keys/pub");
+        this->privKey.Save(priv_file);
+        this->pubKey.Save(pub_file);
+
+        //Adding self keys to vault
+        this->vault.store(this->pubKey);
+    }
+}
+
+void Cryptor::set_symkey(uint8_t* symkey){
+    this->symKey = SecByteBlock(symkey, AES_KEY_SIZE);
+}
+
+void Cryptor::print_keys(){
+    std::cout << "[PublicKey] e : " << this->pubKey.GetPublicExponent() << std::endl;
+    std::cout << "[PublicKey] n : " << this->pubKey.GetModulus().ByteCount() << "B" << std::endl;
+    std::cout << "[PrivateKey] d : " << this->privKey.GetPrivateExponent().ByteCount() << "B" << std::endl;
+}
+
+std::string Cryptor::RSA_Sign(std::string message){
     AutoSeededRandomPool rng;
     std::string signature;
-    DSA::Signer signer(DSA_privkey);
+    RSASSA_PKCS1v15_SHA_Signer signer(this->privKey);
 
-    StringSource ss(message, true,
+    StringSource ss1(message, true,
         new SignerFilter(rng, signer, 
-            new StringSink(signature)));
+            new StringSink(signature)
+        )
+    );
 
     return message+signature;
 }
 
-std::string Cryptor::DSA_verify(std::string message){
-    bool result = false;
-    for(PublicKey* candidate: this->vault.get()){
-        DSA::Verifier verifier(*candidate);
+std::optional<std::string> Cryptor::RSA_Verify(std::string signed_message){
+    const std::unique_ptr<std::vector<Integer>> valid_modulus = this->vault.get();
+    bool is_key_valid;
 
-        
-        StringSource ss(message, true,
-            new SignatureVerificationFilter(
-                verifier,
-                new ArraySink((byte*) &result, sizeof(result)), 
-                8 | 0 /* PUT RESULT | SIGNATURE_AT_THE_END */
-        ));
+    for(auto i = valid_modulus->begin(); i != valid_modulus->end(); ++i){
+        RSASSA_PKCS1v15_SHA_Verifier verifier(*i, this->pubKey.GetPublicExponent());
+        is_key_valid = false;
+        try{
+            StringSource ss( signed_message, true,
+                new SignatureVerificationFilter(
+                    verifier,
+                    new ArraySink(
+                        (byte*)&is_key_valid, sizeof(is_key_valid)),
+                        SignatureVerificationFilter::SIGNATURE_AT_END
+                )
+            );
 
-        if(result)
-            return message.substr(0, message.length() - 40);
+            return signed_message.substr(0, signed_message.length() - 512);
+        }
+        catch(Exception& e){
+            std::cerr << e.what() << std::endl;
+        }
     }
-    
-    std::cerr << "Invalid Signature" << std::endl;
-    return "";
+
+    return std::nullopt;
 }
 
-SecByteBlock& Cryptor::gen_AES_Key(){
-    AutoSeededRandomPool rng;
-    AES_key = SecByteBlock(AES_KEY_LENGTH);
-    rng.GenerateBlock(AES_key, AES_KEY_LENGTH);
+std::string Cryptor::AES_encrypt(std::string message){
+    CBC_Mode<AES>::Encryption e;
+    byte raw_iv[AES::BLOCKSIZE] = IV_VAL; 
+    SecByteBlock iv(raw_iv, AES::BLOCKSIZE);
+    std::string retval;
 
-    return this->AES_key;
+    e.SetKeyWithIV(this->symKey, AES_KEY_SIZE, iv);
+    StringSource s(message, true,
+        new StreamTransformationFilter(e, 
+            new StringSink(retval)
+        )
+    );
+
+    return retval;
 }
 
-void Cryptor::import_AES_Key(byte* new_key){
-    this->AES_key = SecByteBlock(new_key, AES_KEY_LENGTH);
+std::string Cryptor::AES_decrypt(std::string ciphered){
+    byte raw_iv[AES::BLOCKSIZE] = IV_VAL; 
+    SecByteBlock iv(raw_iv, AES::BLOCKSIZE);
+    CBC_Mode<AES>::Decryption d;
+    std::string retval;
+
+    d.SetKeyWithIV(this->symKey, AES_KEY_SIZE, iv);
+
+    StringSource s(ciphered, true,
+        new StreamTransformationFilter(d,
+            new StringSink(retval)
+        )
+    );
+
+    return retval;
 }
 
-std::string Cryptor::AES_encrypt(byte* iv, std::string message){
-    AutoSeededRandomPool rng;
-    std::string cipher;
-    rng.GenerateBlock(iv, AES::BLOCKSIZE);
-
-    try{
-        GCM<AES>::Encryption e;
-        e.SetKeyWithIV(AES_key, AES_key.size(), iv, AES::BLOCKSIZE);
-
-        StringSource ss(message, true,
-            new AuthenticatedEncryptionFilter(e, 
-                new StringSink(cipher), false, TAG_SIZE));
-    }
-    catch(Exception& e){
-        std::cerr << e.what() << std::endl;
-        err_exit(ENCRYPTION_ERROR);
-    }
-
-    return cipher;
+std::string Cryptor::encrypt(std::string clear){
+    return 
+        this->AES_encrypt(
+            this->RSA_Sign(
+                clear
+            )
+    );
 }
 
-std::string Cryptor::AES_decrypt(byte* iv, std::string ciphered){
-    std::string clear;
-    try{
-        GCM<AES>::Decryption d;
-        d.SetKeyWithIV(AES_key, AES_key.size(), iv, AES::BLOCKSIZE);
-
-        AuthenticatedDecryptionFilter df(d,
-            new StringSink(clear),
-            16 | 0 /*DEFAULT FLAGS*/, TAG_SIZE);
-        
-        StringSource ss2(ciphered, true,
-            new Redirector(df));
-        
-        if(df.GetLastResult() == false)
-            throw new std::runtime_error("Error on intgrity when decrypting");
-    }
-    catch(Exception& e){
-        std::cerr << e.what() << std::endl;
-        err_exit(ENCRYPTION_ERROR);
-    }
-
-    return clear;
+std::optional<std::string> Cryptor::decrypt(std::string cipher){
+    return 
+        this->RSA_Verify(
+        this->AES_decrypt(
+            cipher
+        )
+    );
 }
 
 #endif
