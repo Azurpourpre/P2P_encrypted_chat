@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := -Wall -Wextra -g -fsanitize=address
+CFLAGS := -Wall -Wextra -g
 LDFLAGS := -L lib/cryptopp -lcryptopp
 
 build_and_run: build

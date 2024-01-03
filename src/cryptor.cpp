@@ -4,7 +4,10 @@
 #include <cstring>
 #include <exception>
 #include <ios>
+#include <math.h>
+#include <memory>
 #include <optional>
+#include <string>
 #include <sys/types.h>
 #include <unordered_set>
 #include <fstream>
@@ -19,6 +22,7 @@
 #include "../lib/cryptopp/filters.h"
 #include "../lib/cryptopp/files.h"
 #include "../lib/cryptopp/modes.h"
+#include "../lib/cryptopp/hex.h"
 
 #include "error.cpp"
 
@@ -35,9 +39,11 @@ class Vault{
         Vault();
         ~Vault();
         
+        void store(RSA_Exp key);
         void store(RSA::PublicKey key);
         bool in(RSA::PublicKey key);
         std::unique_ptr<std::vector<Integer>> get();
+        unsigned int size();
     private:
         std::unordered_set<uint8_t*> data;
 };
@@ -89,6 +95,12 @@ Vault::~Vault(){
     vaultFile.close();
 }
 
+void Vault::store(RSA_Exp key){
+    uint8_t* new_key = new RSA_Exp;
+    memcpy(new_key, key, RSA_KEY_SIZE);
+    this->data.insert(new_key);
+}
+
 void Vault::store(RSA::PublicKey key){
     uint8_t* new_key = new RSA_Exp;
     key.GetModulus().Encode(new_key, RSA_KEY_SIZE, Integer::UNSIGNED);
@@ -119,27 +131,37 @@ std::unique_ptr<std::vector<Integer>> Vault::get(){
     return retval;
 }
 
+unsigned int Vault::size(){
+    return data.size();
+}
+
 
 class Cryptor{
     public:
         Cryptor();
 
-        void set_symkey(uint8_t* key);
+        void set_symkey(std::string ciphered_key);
+        uint8_t* get_symkey(const RSA_Exp pubkey);
+        uint8_t* gen_symkey();
+        uint8_t* get_pubkey();
         void print_keys();
+        
+        Vault* get_vault();
 
         std::string encrypt(std::string clear);
         std::optional<std::string> decrypt(std::string cipher);
+
+        std::string RSA_Sign(std::string message);
+        std::optional<std::string> RSA_Verify(const std::string signed_message);
+        std::optional<std::string> RSA_Verify(const std::string signed_message, Integer key);
+
+        std::string AES_encrypt(std::string message);
+        std::string AES_decrypt(std::string ciphered);
     private:
         Vault vault;
         RSA::PublicKey pubKey;
         RSA::PrivateKey privKey;
         SecByteBlock symKey;
-
-        std::string RSA_Sign(std::string message);
-        std::optional<std::string> RSA_Verify(std::string signed_message);
-
-        std::string AES_encrypt(std::string message);
-        std::string AES_decrypt(std::string ciphered);
 };
 
 Cryptor::Cryptor(){
@@ -176,14 +198,72 @@ Cryptor::Cryptor(){
     }
 }
 
-void Cryptor::set_symkey(uint8_t* symkey){
-    this->symKey = SecByteBlock(symkey, AES_KEY_SIZE);
+void Cryptor::set_symkey(std::string ciphered_key){
+    RSAES_OAEP_SHA_Decryptor d(this->privKey);
+    AutoSeededRandomPool rng;
+    uint8_t recovered_key[AES_KEY_SIZE];
+
+    StringSource s(ciphered_key, true,
+        new PK_DecryptorFilter(rng, d, 
+            new ArraySink(recovered_key, AES_KEY_SIZE)
+        )
+    );
+
+    this->symKey = SecByteBlock(recovered_key, AES_KEY_SIZE);
+}
+
+uint8_t* Cryptor::gen_symkey(){
+    AutoSeededRandomPool rng;
+    uint8_t* retval = new uint8_t[AES_KEY_SIZE];
+
+    rng.GenerateBlock(retval, AES_KEY_SIZE);
+
+    this->symKey = SecByteBlock(retval, AES_KEY_SIZE);
+
+    return retval;
+}
+
+uint8_t* Cryptor::get_pubkey(){
+    uint8_t* retval = new uint8_t[RSA_KEY_SIZE];
+    this->pubKey.GetModulus().Encode(retval, RSA_KEY_SIZE, Integer::UNSIGNED);
+
+    return retval;
 }
 
 void Cryptor::print_keys(){
+    std::string encoded;
+    ArraySource ss(this->symKey, AES_KEY_SIZE, true,
+        new HexEncoder(
+            new StringSink(encoded)
+        )
+    );
+
     std::cout << "[PublicKey] e : " << this->pubKey.GetPublicExponent() << std::endl;
     std::cout << "[PublicKey] n : " << this->pubKey.GetModulus().ByteCount() << "B" << std::endl;
     std::cout << "[PrivateKey] d : " << this->privKey.GetPrivateExponent().ByteCount() << "B" << std::endl;
+    std::cout << "[SymKey] k : " << encoded << std::endl;
+}
+
+uint8_t* Cryptor::get_symkey(const RSA_Exp e_key){
+    AutoSeededRandomPool rng;
+    uint8_t* retval = new uint8_t[RSA_KEY_SIZE];
+
+    RSA::PublicKey key;
+    key.SetPublicExponent(this->pubKey.GetPublicExponent());
+    key.SetModulus(Integer(e_key, RSA_KEY_SIZE, Integer::UNSIGNED));
+    RSAES_OAEP_SHA_Encryptor e(key);
+
+    ArraySource s(this->symKey.data(), AES_KEY_SIZE, true,
+        new PK_EncryptorFilter(rng, e,
+            new ArraySink(retval, RSA_KEY_SIZE)
+        )
+    );
+
+    return retval;
+}
+
+Vault* Cryptor::get_vault(){
+    return &this->vault;
 }
 
 std::string Cryptor::RSA_Sign(std::string message){
@@ -197,34 +277,35 @@ std::string Cryptor::RSA_Sign(std::string message){
         )
     );
 
-    return message+signature;
+    return signature;
 }
 
-std::optional<std::string> Cryptor::RSA_Verify(std::string signed_message){
+std::optional<std::string> Cryptor::RSA_Verify(const std::string signed_message){
     const std::unique_ptr<std::vector<Integer>> valid_modulus = this->vault.get();
-    bool is_key_valid;
 
     for(auto i = valid_modulus->begin(); i != valid_modulus->end(); ++i){
-        RSASSA_PKCS1v15_SHA_Verifier verifier(*i, this->pubKey.GetPublicExponent());
-        is_key_valid = false;
-        try{
-            StringSource ss( signed_message, true,
-                new SignatureVerificationFilter(
-                    verifier,
-                    new ArraySink(
-                        (byte*)&is_key_valid, sizeof(is_key_valid)),
-                        SignatureVerificationFilter::SIGNATURE_AT_END
-                )
-            );
+        std::optional<std::string> resp = this->RSA_Verify(signed_message, *i);
 
-            return signed_message.substr(0, signed_message.length() - 512);
-        }
-        catch(Exception& e){
-            std::cerr << e.what() << std::endl;
+        if(resp != std::nullopt){
+            return resp;
         }
     }
 
     return std::nullopt;
+}
+
+std::optional<std::string> Cryptor::RSA_Verify(std::string signed_message, Integer key){
+    RSASSA_PKCS1v15_SHA_Verifier verifier(key, this->pubKey.GetPublicExponent());
+    std::string signature = signed_message.substr(signed_message.length() - RSA_KEY_SIZE);
+
+    bool valid = verifier.VerifyMessage((const byte*)signed_message.c_str(), signed_message.length() - RSA_KEY_SIZE, (const byte*)signature.c_str(), RSA_KEY_SIZE);
+
+    if(valid == true){
+        return signed_message.substr(0, signed_message.length() - RSA_KEY_SIZE);
+    }
+    else{
+        return std::nullopt;
+    }
 }
 
 std::string Cryptor::AES_encrypt(std::string message){
@@ -244,28 +325,33 @@ std::string Cryptor::AES_encrypt(std::string message){
 }
 
 std::string Cryptor::AES_decrypt(std::string ciphered){
-    byte raw_iv[AES::BLOCKSIZE] = IV_VAL; 
-    SecByteBlock iv(raw_iv, AES::BLOCKSIZE);
-    CBC_Mode<AES>::Decryption d;
-    std::string retval;
+    try{
+        byte raw_iv[AES::BLOCKSIZE] = IV_VAL; 
+        SecByteBlock iv(raw_iv, AES::BLOCKSIZE);
+        CBC_Mode<AES>::Decryption d;
+        std::string retval;
 
-    d.SetKeyWithIV(this->symKey, AES_KEY_SIZE, iv);
+        d.SetKeyWithIV(this->symKey, AES_KEY_SIZE, iv);
 
-    StringSource s(ciphered, true,
-        new StreamTransformationFilter(d,
-            new StringSink(retval)
-        )
-    );
+        StringSource s(ciphered, true,
+            new StreamTransformationFilter(d,
+                new StringSink(retval)
+            )
+        );
 
-    return retval;
+        return retval;
+    }
+    catch(Exception& e){
+        std::cerr << e.what() << std::endl;
+        std::string error = "ciphered was " + std::to_string(ciphered.length());
+        return error;
+    }
 }
 
 std::string Cryptor::encrypt(std::string clear){
     return 
         this->AES_encrypt(
-            this->RSA_Sign(
-                clear
-            )
+            clear + this->RSA_Sign(clear)
     );
 }
 

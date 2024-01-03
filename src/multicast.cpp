@@ -11,7 +11,7 @@
 class msocket_recv{
     public:
         msocket_recv(const char* ip_group, const int port);
-        void recv(char* buffer, int bufsz);
+        void recv(void* buffer, int bufsz);
     private:
         int fd_sock;
         struct sockaddr_in addr;
@@ -66,26 +66,35 @@ msocket_recv::msocket_recv(const char* ip_group, const int port){
 }
 
 
-void msocket_recv::recv(char* buffer, int bufsz){
+void msocket_recv::recv(void* buffer, int bufsz){
     struct sockaddr_in recv_addr;
     unsigned int addr_len = sizeof(recv_addr);
-    int nbytes = recvfrom(this->fd_sock, buffer, bufsz, 0, (struct sockaddr*)&recv_addr, &addr_len);
-    if(nbytes < 0) err_exit(SOCKET_RUNTIME_ERROR);
+    bool found = false;
+    struct ifaddrs* myif = new ifaddrs;
 
-    /* Check if address is mine */
-    struct ifaddrs* myif = new ifaddrs, *tmp;
-    getifaddrs(&myif);
-    tmp = myif;
+    while(found == false){
+        int nbytes = recvfrom(this->fd_sock, buffer, bufsz, 0, (struct sockaddr*)&recv_addr, &addr_len);
+        if(nbytes < 0) err_exit(SOCKET_RUNTIME_ERROR);
 
-    while(tmp){
-        if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET){
-            const struct sockaddr_in* tmp_skr = (const sockaddr_in*)tmp->ifa_addr;
-            if(tmp_skr->sin_addr.s_addr == recv_addr.sin_addr.s_addr){
-                const char null = 0;
-                memcpy(buffer, &null, bufsz);
+        /* Check if address is mine */
+        struct ifaddrs* tmp;
+        bool local = false;
+        getifaddrs(&myif);
+        tmp = myif;
+
+        while(tmp && found == false){
+            if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET){
+                const struct sockaddr_in* tmp_skr = (const sockaddr_in*)tmp->ifa_addr;
+                if(tmp_skr->sin_addr.s_addr == recv_addr.sin_addr.s_addr){
+                    local = true;
+                }
             }
+            tmp = tmp->ifa_next;
         }
-        tmp = tmp->ifa_next;
+
+        if(local == false){
+            found = true;
+        }
     }
 
     delete myif;

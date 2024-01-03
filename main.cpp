@@ -1,36 +1,42 @@
 #include <iostream>
 #include <optional>
 #include <ostream>
+#include "src/error.cpp"
+#include "src/packets.h"
 #include "src/reciever.cpp"
 #include "src/emitter.cpp"
 #include "src/connecter.cpp"
 
 int main(){
 	Cryptor* crypt = new Cryptor();
-	unsigned char key[] = "BQg8v6tFlsSRkvPA4m2qb3N7JQMLj2nX";
-	crypt->set_symkey(&key[0]);
-	//crypt->print_keys();
 
-	std::string message = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Id aliquet risus feugiat in ante metus. Id donec ultrices tincidunt arcu non sodales neque sodales ut. Tellus id interdum velit laoreet id donec. Suspendisse sed nisi lacus sed viverra. Nullam ac tortor vitae purus faucibus ornare suspendisse sed. Eget dolor morbi non arcu risus quis varius. Urna cursus eget nunc scelerisque viverra mauris in aliquam sem. Eget gravida cum sociis natoque penatibus et magnis. Euismod quis viverra nibh cras pulvinar mattis nunc sed blandit.";
-	std::string cipher = crypt->encrypt(message);
-	std::optional<std::string> recv_data = crypt->decrypt(cipher);
+	Connecter connecter(crypt, "239.69.69.69", 9876);
 
-	std::cout
-		<< "MESSAGE CORRECT : " << (*recv_data == message) << std::endl
-		<< "VALID : " << recv_data.has_value() << std::endl;
+	Emitter em(crypt, connecter.get_socket().send);
+	Reciever rc(crypt, &connecter);
 
-	/*Connecter connecter(crypt, "239.1.1.1", 9876);
-	struct msocket sock_pair = connecter.get_socket();
+	Packets::Hello hello_pkt;
+	hello_pkt.auth = Packets::AUTH_CHALLENGE_RESPONSE;
+	switch(connecter.connect("Hello ! I want to connect to this network :)")){
+		case Connecter::FIRST:
+			crypt->gen_symkey();
+			rc.doHello(hello_pkt);
+			break;
+		case Connecter::SUCCESS:
+			break;
+		case Connecter::FAILED:
+			err_exit(Errors::SOCKET_INIT_ERROR);
+			break;
+	}
 
-	Emitter em(crypt, sock_pair.send);
-	Reciever rc(crypt, sock_pair.recv);
+	crypt->print_keys();
 
 	pthread_t em_id, rc_id;
 	pthread_create(&em_id, NULL, &(Emitter::run), &em);
 	pthread_create(&rc_id, NULL, &(Reciever::run), &rc);
 
 	pthread_join(em_id, NULL);
-	pthread_cancel(rc_id);*/
+	pthread_cancel(rc_id);
 
 
 	delete crypt;

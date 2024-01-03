@@ -1,6 +1,7 @@
 #ifndef _EMITTER
 #define _EMITTER
 
+#include <cstring>
 #include "packets.h"
 #include "cryptor.cpp"
 #include "multicast.cpp"
@@ -34,10 +35,8 @@ Emitter::~Emitter(){
 void* Emitter::run(void* pself){
     Emitter* self = (Emitter*)pself;
     std::string input;
-    int iter = 0;
 
     do{
-        std::cout << "{iter : " << iter++ << "}" << std::endl;
         std::cout << "> ";
         std::getline(std::cin, input);
 
@@ -62,16 +61,24 @@ void Emitter::parseCommand(const std::string input){
     if(input.compare("quit") == 0){
         this->exit = true;
     }
-    else if(input.compare("rename") == 0){
+    else if(input.compare("nick") == 0){
         std::cout << "Enter your new username : ";
         std::getline(std::cin, this->username);
+    }
+    else if(input.compare("vault_sz") == 0){
+        std::cout << "Your vault has " << this->cryptor->get_vault()->size() << " keys !" << std::endl;
     }
 }
 
 void Emitter::doMessage(const std::string message){
     Packets::Message sendval;
-    strncpy(sendval.username, this->username.c_str(), 15);
-    strncpy(sendval.message, message.c_str(), 1024);
+    std::string to_send = this->cryptor->encrypt(message);
+
+    std::cout << "Ciphered makes " << to_send.length() << "bytes" << std::endl;
+
+    strncpy((char*)sendval.username, this->username.c_str(), 15);
+    memcpy((char*)sendval.signed_message, to_send.c_str(), 1024 + 512);
+    sendval.sz = to_send.length();
 
     this->socket->send(&sendval, sizeof(Packets::Message));
 }
