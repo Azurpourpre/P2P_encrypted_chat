@@ -63,15 +63,14 @@ Connecter::connect_status Connecter::connect(const std::string message){
     
 
     // Resp Valid
-    this->s_recv->recv(buffer, MAX_PACKET_SIZE);
-    pkt_id = (Packets::packet_id*) buffer;
-    if(*pkt_id != Packets::ID_VALID){
-        return FAILED;
-    }
+    do{
+        this->s_recv->recv(buffer, MAX_PACKET_SIZE);
+        pkt_id = (Packets::packet_id*) buffer;
+    }while(*pkt_id != Packets::ID_VALID);
     
     std::cout << "[VALID] Got symkey !" << std::endl;
     Packets::Valid pkt = *(Packets::Valid*)buffer;
-    this->cryptor->set_symkey(std::string((char*)pkt.symkey, sizeof(pkt.symkey)));
+    this->cryptor->set_symkey(std::string((char*)pkt.symkey, RSA_KEY_SIZE));
     
     return SUCCESS;
 }

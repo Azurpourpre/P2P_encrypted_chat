@@ -17,3 +17,9 @@ services:
     networks:
       lan:
         ipv4_address: 172.42.0.3
+  
+  cli3:
+    build: .
+    networks:
+      lan:
+        ipv4_address: 172.42.0.4

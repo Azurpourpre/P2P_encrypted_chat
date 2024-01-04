@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := -Wall -Wextra -g
+CFLAGS := -Wall -Wextra -g -static
 LDFLAGS := -L lib/cryptopp -lcryptopp
 
 build_and_run: build
