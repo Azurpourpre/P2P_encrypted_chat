@@ -19,6 +19,8 @@ class Reciever{
         void doHello(const Packets::Hello data);
         void doResponse(const Packets::Response data);
         void doMessage(const Packets::Message data);
+        void doValid();
+        void doKeys(const Packets::Keys data);
     private:
         msocket_recv* socket;
         Connecter* conn;
@@ -53,6 +55,12 @@ void* Reciever::run(void* pself){
             case Packets::ID_RESPONSE:
                 self->doResponse(*(const Packets::Response*)data);
                 break;
+            case Packets::ID_VALID:
+                self->doValid();
+                break;
+            case Packets::ID_KEYS:
+                self->doKeys(*(const Packets::Keys*)data);
+                break;
             default:
                 break;
         }
@@ -77,6 +85,17 @@ void Reciever::doMessage(const Packets::Message data){
 void Reciever::doResponse(const Packets::Response data){
     std::cout << "[RESPONSE] {Message : " << data.message << "}" << std::endl;
     this->conn->resp_Response(data);
+}
+
+void Reciever::doValid(){
+    std::cout << "[Valid]" << std::endl;
+    this->conn->send_keys();
+}
+
+void Reciever::doKeys(const Packets::Keys data){
+    std::string enc_key((char*)data.mykey, RSA_KEY_SIZE + 16);
+    std::string key = this->cryptor->AES_decrypt(enc_key);
+    this->cryptor->get_vault()->store((uint8_t*)key.c_str());
 }
 
 #endif

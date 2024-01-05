@@ -2,19 +2,10 @@
 #define _CRYPTOR
 
 #include <cstring>
-#include <exception>
-#include <ios>
-#include <math.h>
-#include <memory>
 #include <optional>
 #include <string>
-#include <sys/types.h>
 #include <unordered_set>
 #include <fstream>
-#include <iostream>
-#include <cstdint>
-#include <cmath>
-#include <vector>
 
 #include "../lib/cryptopp/rsa.h"
 #include "../lib/cryptopp/rijndael.h"
@@ -26,7 +17,7 @@
 
 #include "error.cpp"
 
-#define AES_KEY_SIZE 256/8
+#define AES_KEY_SIZE 128/8
 #define RSA_KEY_SIZE 4096/8
 #define IV_VAL {38, 49, 234, 213, 173, 165, 254, 207, 18, 2, 96, 157, 117, 197, 215, 28}
 
@@ -39,7 +30,7 @@ class Vault{
         Vault();
         ~Vault();
         
-        void store(RSA_Exp key);
+        void store(const RSA_Exp key);
         void store(RSA::PublicKey key);
         bool in(RSA::PublicKey key);
         std::unique_ptr<std::vector<Integer>> get();
@@ -95,7 +86,7 @@ Vault::~Vault(){
     vaultFile.close();
 }
 
-void Vault::store(RSA_Exp key){
+void Vault::store(const RSA_Exp key){
     uint8_t* new_key = new RSA_Exp;
     memcpy(new_key, key, RSA_KEY_SIZE);
     this->data.insert(new_key);
@@ -295,17 +286,24 @@ std::optional<std::string> Cryptor::RSA_Verify(const std::string signed_message)
 }
 
 std::optional<std::string> Cryptor::RSA_Verify(std::string signed_message, Integer key){
-    RSASSA_PKCS1v15_SHA_Verifier verifier(key, this->pubKey.GetPublicExponent());
-    std::string signature = signed_message.substr(signed_message.length() - RSA_KEY_SIZE);
+    try{
+        RSASSA_PKCS1v15_SHA_Verifier verifier(key, this->pubKey.GetPublicExponent());
+        
+        StringSource ss(signed_message, true,
+            new SignatureVerificationFilter( 
+                verifier,
+                NULL, 
+                SignatureVerificationFilter::THROW_EXCEPTION
+            )
+        );
 
-    bool valid = verifier.VerifyMessage((const byte*)signed_message.c_str(), signed_message.length() - RSA_KEY_SIZE, (const byte*)signature.c_str(), RSA_KEY_SIZE);
-
-    if(valid == true){
         return signed_message.substr(0, signed_message.length() - RSA_KEY_SIZE);
     }
-    else{
+    catch(Exception& e){
         return std::nullopt;
     }
+
+    
 }
 
 std::string Cryptor::AES_encrypt(std::string message){

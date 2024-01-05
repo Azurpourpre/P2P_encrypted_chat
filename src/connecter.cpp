@@ -22,7 +22,7 @@ class Connecter{
         void resp_Challenge(const Packets::Challenge chall, const std::string message);
         void resp_Response(const Packets::Response resp);
 
-        void send_key(const std::string message);
+        void send_keys();
     private:
         Cryptor* cryptor;
         msocket_recv* s_recv;
@@ -126,6 +126,8 @@ void Connecter::resp_Response(const Packets::Response resp){
             this->s_send->send(&resp_pkt, sizeof(Packets::Valid));
 
             delete[] c_symkey;
+
+            this->send_keys();
         }
         else{
             std::cerr << "Invalid Response ! (Failed at step 2)" << std::endl;
@@ -134,6 +136,19 @@ void Connecter::resp_Response(const Packets::Response resp){
     else{
         std::cerr << "Invalid Response ! (Failed at step 2)" << std::endl;
     }
+}
+
+void Connecter::send_keys(){
+    // Sends public Key Encrypted with symkey
+    std::string pubkey((char*)this->cryptor->get_pubkey(), RSA_KEY_SIZE);
+    std::string enc_pubkey = this->cryptor->AES_encrypt(pubkey);
+
+    std::cout << "Encrypted key size : " << enc_pubkey.length() << "B" << std::endl;
+    
+    Packets::Keys pkt;
+    memcpy(pkt.mykey, enc_pubkey.data(), RSA_KEY_SIZE + 16);
+
+    this->s_send->send(&pkt, sizeof(Packets::Keys));
 }
 
 struct msocket Connecter::get_socket(){

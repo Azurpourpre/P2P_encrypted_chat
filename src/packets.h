@@ -6,11 +6,12 @@
 
 /*
     Packet ID :
-    0b0 -> Don't assign
-    0b1 -> Message
-    0b1?? -> Control Messages
-        0b100 -> Hello
-        0b101 -> Keys Extract
+    0x0? -> General Purpose Messages
+        0b0 -> Don't assign
+        0b1 -> Message
+        0b1?? -> Control Messages
+            0b100 -> Hello
+            0b101 -> Keys
     0x1? -> Authentication with known public key
         0x10 -> Challenge
         0x11 -> Response
@@ -19,7 +20,7 @@
 */
 
 namespace Packets{
-    enum packet_id : uint8_t {ID_MESSAGE = 0b1, ID_HELLO = 0b100, ID_KEYS_EXTRACT = 0b101, ID_CHALLENGE = 0x10, ID_RESPONSE = 0x11, ID_VALID = 0x12};
+    enum packet_id : uint8_t {ID_MESSAGE = 0b1, ID_HELLO = 0b100, ID_KEYS = 0b101, ID_ANSWER_KEY = 0b110, ID_CHALLENGE = 0x10, ID_RESPONSE = 0x11, ID_VALID = 0x12};
     enum auth_type : uint8_t {AUTH_CHALLENGE_RESPONSE = 0};
 
     typedef struct Hello{
@@ -51,6 +52,11 @@ namespace Packets{
         const packet_id id = ID_VALID;
         uint8_t symkey[RSA_KEY_SIZE];
     } Valid;
+
+    typedef struct Keys{
+        const packet_id id = ID_KEYS;
+        uint8_t mykey[RSA_KEY_SIZE + 16]; //Padding ??
+    } Keys;
 
     union Generic_packet {Hello h; Message m; Challenge c; Response r; Valid v;};
 };
