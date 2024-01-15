@@ -6,6 +6,8 @@
 #include "cryptor.cpp"
 #include "multicast.cpp"
 
+#define MIN(a, b) (a < b) ? a : b
+
 class Emitter{
     public:
         Emitter(Cryptor* cryptor, msocket_send* socket);
@@ -64,6 +66,7 @@ void Emitter::parseCommand(const std::string input){
     else if(input.compare("nick") == 0){
         std::cout << "Enter your new username : ";
         std::getline(std::cin, this->username);
+        this->username = this->username.substr(0, 15);
     }
     else if(input.compare("vault_sz") == 0){
         std::cout << "Your vault has " << this->cryptor->get_vault()->size() << " keys !" << std::endl;
@@ -72,12 +75,16 @@ void Emitter::parseCommand(const std::string input){
 
 void Emitter::doMessage(const std::string message){
     Packets::Message sendval;
-    std::string to_send = this->cryptor->encrypt(message);
+    std::string cropped_message = message.substr(0, 1024 + RSA_KEY_SIZE);
+    std::string to_send = this->cryptor->encrypt(cropped_message);
 
-    std::cout << "Ciphered makes " << to_send.length() << "bytes" << std::endl;
+    std::cerr << "Cropped message length : " << cropped_message.length() << std::endl
+        << "Ciphertext length : " << to_send.length() << std::endl;
 
+    memset(sendval.username, 0, 16);
     strncpy((char*)sendval.username, this->username.c_str(), 15);
-    memcpy((char*)sendval.signed_message, to_send.c_str(), 1024 + 512);
+    memset(sendval.signed_message, 0, 1024 + RSA_KEY_SIZE + AES::BLOCKSIZE);
+    memcpy(sendval.signed_message, to_send.c_str(), to_send.length());
     sendval.sz = to_send.length();
 
     this->socket->send(&sendval, sizeof(Packets::Message));

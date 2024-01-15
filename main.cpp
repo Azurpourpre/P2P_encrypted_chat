@@ -38,7 +38,6 @@ int main(){
 	pthread_join(em_id, NULL);
 	pthread_cancel(rc_id);
 
-
 	delete crypt;
 	return 0;
 }

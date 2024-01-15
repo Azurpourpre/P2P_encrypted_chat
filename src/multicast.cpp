@@ -6,6 +6,8 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <cstring>
+#include <vector>
+
 #include "error.cpp"
 
 class msocket_recv{
@@ -15,11 +17,13 @@ class msocket_recv{
     private:
         int fd_sock;
         struct sockaddr_in addr;
+        std::vector<in_addr_t> if_ip;
 };
 
 class msocket_send{
     public:
         msocket_send(const char* ip_group, const int port);
+        ~msocket_send();
         void send(void* buffer, int bufsz);
     private:
         int fd_sock;
@@ -63,6 +67,20 @@ msocket_recv::msocket_recv(const char* ip_group, const int port){
     if(
         setsockopt(fd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0
     ) err_exit(SOCKET_INIT_ERROR);
+
+    // Get my ip address(es)
+
+    struct ifaddrs* tmp, *myif;
+    getifaddrs(&myif);
+    tmp = myif;
+    while(tmp){
+        if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET){
+            const struct sockaddr_in* tmp_skr = (const sockaddr_in*)tmp->ifa_addr;
+            this->if_ip.push_back(tmp_skr->sin_addr.s_addr);
+        }
+        tmp = tmp->ifa_next;
+    }
+    freeifaddrs(myif);
 }
 
 
@@ -70,34 +88,23 @@ void msocket_recv::recv(void* buffer, int bufsz){
     struct sockaddr_in recv_addr;
     unsigned int addr_len = sizeof(recv_addr);
     bool found = false;
-    struct ifaddrs* myif = new ifaddrs;
 
     while(found == false){
         int nbytes = recvfrom(this->fd_sock, buffer, bufsz, 0, (struct sockaddr*)&recv_addr, &addr_len);
         if(nbytes < 0) err_exit(SOCKET_RUNTIME_ERROR);
 
         /* Check if address is mine */
-        struct ifaddrs* tmp;
         bool local = false;
-        getifaddrs(&myif);
-        tmp = myif;
 
-        while(tmp && found == false){
-            if(tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET){
-                const struct sockaddr_in* tmp_skr = (const sockaddr_in*)tmp->ifa_addr;
-                if(tmp_skr->sin_addr.s_addr == recv_addr.sin_addr.s_addr){
-                    local = true;
-                }
-            }
-            tmp = tmp->ifa_next;
+        for(auto i = this->if_ip.begin() ; i != this->if_ip.end() && local == false; ++i){
+            if (*i == recv_addr.sin_addr.s_addr)
+                local = true;
         }
 
         if(local == false){
             found = true;
         }
     }
-
-    delete myif;
 
 }
 
@@ -113,6 +120,10 @@ msocket_send::msocket_send(const char* ip_group, const int port){
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr(ip_group);
     addr.sin_port = 0;
+}
+
+msocket_send::~msocket_send(){
+    delete[] this->ip_group;
 }
 
 void msocket_send::send(void* buffer, int bufsz){

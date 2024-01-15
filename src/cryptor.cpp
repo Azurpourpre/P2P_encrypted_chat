@@ -1,7 +1,9 @@
 #ifndef _CRYPTOR
 #define _CRYPTOR
 
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -133,8 +135,8 @@ class Cryptor{
 
         void set_symkey(std::string ciphered_key);
         uint8_t* get_symkey(const RSA_Exp pubkey);
-        uint8_t* gen_symkey();
-        uint8_t* get_pubkey();
+        void gen_symkey();
+        std::unique_ptr<uint8_t[]> get_pubkey();
         void print_keys();
         
         Vault* get_vault();
@@ -203,7 +205,7 @@ void Cryptor::set_symkey(std::string ciphered_key){
     this->symKey = SecByteBlock(recovered_key, AES_KEY_SIZE);
 }
 
-uint8_t* Cryptor::gen_symkey(){
+void Cryptor::gen_symkey(){
     AutoSeededRandomPool rng;
     uint8_t* retval = new uint8_t[AES_KEY_SIZE];
 
@@ -211,12 +213,12 @@ uint8_t* Cryptor::gen_symkey(){
 
     this->symKey = SecByteBlock(retval, AES_KEY_SIZE);
 
-    return retval;
+    delete[] retval;
 }
 
-uint8_t* Cryptor::get_pubkey(){
-    uint8_t* retval = new uint8_t[RSA_KEY_SIZE];
-    this->pubKey.GetModulus().Encode(retval, RSA_KEY_SIZE, Integer::UNSIGNED);
+std::unique_ptr<uint8_t[]> Cryptor::get_pubkey(){
+    std::unique_ptr<uint8_t[]> retval = std::make_unique<uint8_t[]>(512);
+    this->pubKey.GetModulus().Encode(retval.get(), RSA_KEY_SIZE, Integer::UNSIGNED);
 
     return retval;
 }
@@ -347,9 +349,13 @@ std::string Cryptor::AES_decrypt(std::string ciphered){
 }
 
 std::string Cryptor::encrypt(std::string clear){
+    std::string signature = this->RSA_Sign(clear);
+
+    std::cerr << "Signature length : " << signature.length() << std::endl;
+
     return 
         this->AES_encrypt(
-            clear + this->RSA_Sign(clear)
+            clear + signature
     );
 }
 

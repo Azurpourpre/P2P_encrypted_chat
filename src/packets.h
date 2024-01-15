@@ -31,7 +31,7 @@ namespace Packets{
     typedef struct Message{
         const packet_id id = ID_MESSAGE;
         uint8_t username[16];
-        uint8_t signed_message[1024 + RSA_KEY_SIZE]; // this is a multiple of 16 yay
+        uint8_t signed_message[1024 + RSA_KEY_SIZE + AES::BLOCKSIZE + 512]; // 512 bytes unexplained ??
         uint16_t sz;
     } Message;
 
@@ -55,7 +55,7 @@ namespace Packets{
 
     typedef struct Keys{
         const packet_id id = ID_KEYS;
-        uint8_t mykey[RSA_KEY_SIZE + 16]; //Padding ??
+        uint8_t mykey[RSA_KEY_SIZE + AES::BLOCKSIZE]; //Padding ??
     } Keys;
 
     union Generic_packet {Hello h; Message m; Challenge c; Response r; Valid v;};

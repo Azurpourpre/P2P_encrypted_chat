@@ -1,6 +1,6 @@
-FROM alpine:latest
-RUN apk update
-RUN apk add --update build-base
+FROM ubuntu:latest
+RUN apt update
+RUN apt install --yes "g++" make
 COPY lib /app/lib
 COPY Makefile /app/Makefile
 RUN mkdir /app/.keys

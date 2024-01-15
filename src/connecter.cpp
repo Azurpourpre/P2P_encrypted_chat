@@ -93,7 +93,7 @@ void Connecter::resp_Hello(const Packets::auth_type auth){
 void Connecter::resp_Challenge(const Packets::Challenge chall, const std::string message){
     Packets::Response resp;
 
-    memcpy(resp.pubkey, this->cryptor->get_pubkey(), RSA_KEY_SIZE);
+    memcpy(resp.pubkey, this->cryptor->get_pubkey().get(), RSA_KEY_SIZE);
     strncpy((char*)resp.message, message.c_str(), 1023);
     const std::string s_sign = this->cryptor->RSA_Sign(
         std::string((char*)chall.approved_sign, RSA_KEY_SIZE)
@@ -140,7 +140,7 @@ void Connecter::resp_Response(const Packets::Response resp){
 
 void Connecter::send_keys(){
     // Sends public Key Encrypted with symkey
-    std::string pubkey((char*)this->cryptor->get_pubkey(), RSA_KEY_SIZE);
+    std::string pubkey((char*)this->cryptor->get_pubkey().get(), RSA_KEY_SIZE);
     std::string enc_pubkey = this->cryptor->AES_encrypt(pubkey);
 
     std::cout << "Encrypted key size : " << enc_pubkey.length() << "B" << std::endl;
